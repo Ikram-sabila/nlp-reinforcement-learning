@@ -1,18 +1,14 @@
-
-**`.gitignore`**
-
-```gitignore
 # Python
 __pycache__/
 *.py[cod]
 *.egg-info/
 .pytest_cache/
 
-# Virtual environment
+# Virtual Environment
 .venv/
 venv/
 
-# Environment variables
+# Environment
 .env
 .env.*
 
@@ -20,7 +16,7 @@ venv/
 .vscode/
 .idea/
 
-# Model checkpoints
+# Model Checkpoints
 *.pt
 *.pth
 *.ckpt
