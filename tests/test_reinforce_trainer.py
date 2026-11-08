@@ -1,4 +1,5 @@
 import torch
+import pytest
 
 from nlp_rl.config import ExperimentConfig
 from nlp_rl.rewards.token_match_reward import TokenMatchReward
@@ -93,6 +94,52 @@ def test_train_episode_updates_model_parameters() -> None:
 
     assert "loss" in episode
     assert torch.isfinite(torch.tensor(episode["loss"]))
+
+    assert any(
+        not torch.equal(before, after.detach())
+        for before, after in zip(parameters_before, parameters_after)
+    )
+    
+def test_calculate_baseline() -> None:
+    trainer = create_trainer()
+
+    baseline = trainer.calculate_baseline(
+        batch_returns=[
+            [2.0, 3.0, 4.0],
+            [1.0, 2.0, 3.0],
+        ]
+    )
+
+    assert abs(baseline - 2.5) < 1e-6
+    
+def test_calculate_baseline_rejects_empty_returns() -> None:
+    trainer = create_trainer()
+
+    with pytest.raises(ValueError):
+        trainer.calculate_baseline([])
+        
+def test_train_batch_updates_model_parameters() -> None:
+    torch.manual_seed(42)
+
+    trainer = create_trainer()
+
+    parameters_before = [
+        parameter.detach().clone()
+        for parameter in trainer.agent.policy_network.parameters()
+    ]
+
+    result = trainer.train_batch(batch_size=2)
+
+    parameters_after = list(
+        trainer.agent.policy_network.parameters()
+    )
+
+    assert result["batch_size"] == 2
+    assert len(result["episodes"]) == 2
+    assert "baseline" in result
+    assert "loss" in result
+
+    assert torch.isfinite(torch.tensor(result["loss"]))
 
     assert any(
         not torch.equal(before, after.detach())

@@ -23,6 +23,7 @@ class ExperimentConfig:
     learning_rate: float = 0.001
     discount_factor: float = 0.99
     episodes: int = 2_000
+    batch_size: int = 10
 
     hidden_size: int = 64
     random_seed: int = 42
@@ -47,6 +48,9 @@ class ExperimentConfig:
 
         if self.episodes <= 0:
             raise ValueError("episodes must be positive.")
+        
+        if self.batch_size <= 0:
+            raise ValueError("batch_size must be positive.")
 
         if self.hidden_size <= 0:
             raise ValueError("hidden_size must be positive.")

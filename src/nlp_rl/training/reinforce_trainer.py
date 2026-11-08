@@ -102,31 +102,123 @@ class REINFORCETrainer:
 
         return episode
     
-    def train(self) -> list[dict]:
+    def train(self, use_baseline: bool = True) -> list[dict]:
         history = []
+        episodes_trained = 0
         
-        for episode_number in range(1, self.config.episodes + 1):
-            episode_result = self.train_episode()
+        while episodes_trained < self.config.episodes:
+            current_batch_size = min(
+                self.config.batch_size,
+                self.config.episodes - episodes_trained
+            )
+            
+            batch_result = self.train_batch(
+                batch_size=current_batch_size,
+                use_baseline=use_baseline    
+            )
+            
+            episodes_trained += current_batch_size
             
             history.append({
-                "episode": episode_number,
-                "total_reward": episode_result["total_reward"],
-                "loss": episode_result["loss"]
+                "episode": episodes_trained,
+                "total_reward": batch_result["average_reward"],
+                "loss": batch_result["loss"],
+                "baseline": batch_result["baseline"],
+                "batch_size": batch_result["batch_size"],
+                "baseline": batch_result["baseline"]
             })
-            
-            if episode_number % 100 == 0:
-                recent_results = history[-100:]
-                
-                average_reward = sum(
-                    result["total_reward"]
-                    for result in recent_results
-                ) / len(recent_results)
-                
+        
+            if episodes_trained % 100 == 0 or (
+                episodes_trained == self.config.episodes
+            ):
                 print(
-                    f"Episode: {episode_number} | "
-                    f"Average Reward: {average_reward:.3f}"
+                    f"Episode: {episodes_trained} | "
+                    f"Average Reward: {batch_result['average_reward']:.3f} | "
+                    f"Baseline: {batch_result['baseline']:.3f} | "
+                    f"Loss: {batch_result['loss']:.4f}"
                 )
-                
+
         return history
     
+    def calculate_baseline(
+        self,
+        batch_returns: list[list[float]]
+    ) -> float:
+        all_returns = [
+            return_value
+            for episode_returns in batch_returns
+            for return_value in episode_returns
+        ]
+        
+        if not all_returns:
+            raise ValueError("Cannot calculate baseline from empty returns.")
+
+        return sum(all_returns) / len(all_returns)
+    
+    def train_batch(
+        self, 
+        batch_size: int | None = None,
+        use_baseline: bool = True
+    ) -> dict:
+        if batch_size is None:
+            batch_size = self.config.batch_size
+            
+        if batch_size <= 0:
+            raise ValueError("Batch size must be positive")
+        
+        episodes = [
+            self.collect_episode()
+            for _ in range(batch_size)
+        ]
+        
+        batch_returns = []
+
+        for episode in episodes:
+            returns = self.calculate_returns(episode["rewards"])
+
+            if len(episode["log_probabilities"]) != len(returns):
+                raise ValueError(
+                    "The number of log probabilities and returns must match."
+                )
+
+            episode["returns"] = returns
+            batch_returns.append(returns)
+
+        baseline = (
+            self.calculate_baseline(batch_returns)
+            if use_baseline
+            else 0.0
+        )
+        
+        policy_losses = []
+        
+        for episode in episodes:
+            for log_probability, return_value in zip(
+                episode["log_probabilities"],
+                episode["returns"]
+            ):
+                advantage = return_value - baseline
+                
+                policy_losses.append(
+                    -log_probability * advantage
+                )
+                
+        loss = torch.stack(policy_losses).mean()
+        
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+        
+        average_reward = sum(
+            episode["total_reward"]
+            for episode in episodes
+        ) / len(episodes)
+        
+        return {
+            "episodes": episodes,
+            "loss": loss.item(),
+            "baseline": baseline,
+            "average_reward": average_reward,
+            "batch_size": batch_size
+        }
     
